@@ -40,6 +40,37 @@ print("Mustache shape:", mustache.shape)
 
 
 # --------------------------------
+# Rotate image
+# --------------------------------
+
+def rotate_image(image, angle):
+
+    height, width = image.shape[:2]
+
+    center = (
+        width // 2,
+        height // 2
+    )
+
+    rotation_matrix = cv2.getRotationMatrix2D(
+        center,
+        angle,
+        1.0
+    )
+
+    rotated = cv2.warpAffine(
+        image,
+        rotation_matrix,
+        (width, height),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(0, 0, 0, 0)
+    )
+
+    return rotated
+
+
+# --------------------------------
 # Create Face Landmarker
 # --------------------------------
 
@@ -65,6 +96,7 @@ with FaceLandmarker.create_from_options(options) as landmarker:
         if not success:
             break
 
+        # Mirror webcam
         frame = cv2.flip(frame, 1)
 
         height, width, _ = frame.shape
@@ -126,7 +158,7 @@ with FaceLandmarker.create_from_options(options) as landmarker:
             )
 
             # --------------------------------
-            # Calculate mouth width
+            # Calculate mouth geometry
             # --------------------------------
 
             dx = (
@@ -143,6 +175,15 @@ with FaceLandmarker.create_from_options(options) as landmarker:
 
             mouth_width = math.sqrt(
                 dx ** 2 + dy ** 2
+            )
+
+            # --------------------------------
+            # Calculate tilt angle
+            # --------------------------------
+            # Negative because webcam is mirrored
+
+            angle = -math.degrees(
+                math.atan2(dy, dx)
             )
 
             # --------------------------------
@@ -171,6 +212,21 @@ with FaceLandmarker.create_from_options(options) as landmarker:
             )
 
             # --------------------------------
+            # Rotate mustache
+            # --------------------------------
+
+            rotated = rotate_image(
+                resized,
+                angle
+            )
+
+            # --------------------------------
+            # Get rotated dimensions
+            # --------------------------------
+
+            rotated_height, rotated_width = rotated.shape[:2]
+
+            # --------------------------------
             # Calculate mustache position
             # --------------------------------
 
@@ -180,12 +236,17 @@ with FaceLandmarker.create_from_options(options) as landmarker:
                 mouth_right_point[0]
             ) // 2
 
-            # Move slightly upward
+            # Position between nose and mouth
             center_y = (
                 nose_point[1]
                 +
                 mouth_left_point[1]
             ) // 2
+
+            # Move slightly upward
+            center_y -= int(
+                mouth_width * 0.05
+            )
 
             # --------------------------------
             # Position
@@ -194,17 +255,17 @@ with FaceLandmarker.create_from_options(options) as landmarker:
             x1 = int(
                 center_x
                 -
-                mustache_width / 2
+                rotated_width / 2
             )
 
             y1 = int(
                 center_y
                 -
-                mustache_height / 2
+                rotated_height / 2
             )
 
-            x2 = x1 + mustache_width
-            y2 = y1 + mustache_height
+            x2 = x1 + rotated_width
+            y2 = y1 + rotated_height
 
             # --------------------------------
             # Boundary check
@@ -221,10 +282,10 @@ with FaceLandmarker.create_from_options(options) as landmarker:
                 # Alpha blending
                 # --------------------------------
 
-                if resized.shape[2] == 4:
+                if rotated.shape[2] == 4:
 
                     alpha = (
-                        resized[:, :, 3]
+                        rotated[:, :, 3]
                         / 255.0
                     )
 
@@ -237,7 +298,7 @@ with FaceLandmarker.create_from_options(options) as landmarker:
                         ] = (
                             alpha
                             *
-                            resized[:, :, c]
+                            rotated[:, :, c]
                             +
                             (1 - alpha)
                             *
@@ -253,7 +314,7 @@ with FaceLandmarker.create_from_options(options) as landmarker:
                     frame[
                         y1:y2,
                         x1:x2
-                    ] = resized
+                    ] = rotated
 
         # --------------------------------
         # Display
